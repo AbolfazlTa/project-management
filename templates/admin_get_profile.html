@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Get Profile</title>
+</head>
+<body>
+            {% extends 'layout.html' %}
+
+        {% block title %}Profile - Admin Dashboard{% endblock %}
+
+        {% block content %}
+            <h1>Welcome to Your Profile</h1>
+            <p>Username: {{ user.username }}</p>
+            <p>Email: {{ user.email }}</p>
+            <p>National Code: {{ user.national_code }}</p>
+            <img src="{{ user.profile_picture }}" alt="Profile Picture" />
+        {% endblock %}
+
+    <h1>Profile Information</h1>
+
+
+
+
+
+    {% if session['user_id'] %}
+        <div>
+            <h2>Welcome, {{ user.username }}</h2>
+            <p>Email: {{ user.email }}</p>
+            <p>National Code: {{ user.national_code }}</p>
+            <img src="{{ user.profile_picture }}" alt="Profile Picture" />
+        </div>
+        <a href="{{ url_for('admin_logout') }}">Logout</a>
+    {% else %}
+        <p>You are not logged in. <a href="{{ url_for('admin_login') }}">Login</a></p>
+    {% endif %}
+
+</body>
+</html>

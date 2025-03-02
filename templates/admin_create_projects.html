@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects Management</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+</head>
+<body>
+
+<div class="container mt-5">
+    <h1>Projects Management</h1>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="alert alert-{{ messages[0][0] }}">
+                {{ messages[0][1] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Project list -->
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Project Manager</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for project in projects %}
+                <tr>
+                    <td>{{ project.id }}</td>
+                    <td>{{ project.title }}</td>
+                    <td>{{ project.description }}</td>
+                    <td>{{ project.status }}</td>
+                    <td>{{ project.start_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ project.end_time.strftime('%Y-%m-%d %H:%M:%S') if project.end_time else 'N/A' }}</td>
+                    <td>{{ project.project_manager.username if project.project_manager else 'N/A' }}</td>
+                    <td>
+                        <a href="{{ url_for('edit_project', project_id=project.id) }}" class="btn btn-primary">Edit</a>
+                        <form action="{{ url_for('delete_project') }}" method="POST" style="display:inline;">
+                            <input type="hidden" name="id" value="{{ project.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Add new project form -->
+    <h2>Create New Project</h2>
+    <form method="POST" action="{{ url_for('manage_projects') }}">
+        <div class="form-group">
+            <label for="title">Title</label>
+            <input type="text" class="form-control" id="title" name="title" required>
+        </div>
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea class="form-control" id="description" name="description" required></textarea>
+        </div>
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select class="form-control" id="status" name="status">
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="start_time">Start Time</label>
+            <input type="datetime-local" class="form-control" id="start_time" name="start_time" required>
+        </div>
+        <div class="form-group">
+            <label for="end_time">End Time</label>
+            <input type="datetime-local" class="form-control" id="end_time" name="end_time">
+        </div>
+        <div class="form-group">
+            <label for="project_manager_id">Project Manager</label>
+            <input type="number" class="form-control" id="project_manager_id" name="project_manager_id" required>
+        </div>
+        <button type="submit" class="btn btn-success">Create Project</button>
+    </form>
+</div>
+
+</body>
+</html>

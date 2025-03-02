@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Profile Picture</title>
+</head>
+<body>
+    <h1>Upload Profile Picture</h1>
+    <form id="upload-profile-picture-form" enctype="multipart/form-data">
+        <input type="file" id="profile_picture" accept="image/*" required><br><br>
+        <button type="submit">Upload</button>
+    </form>
+
+    <script>
+        document.getElementById('upload-profile-picture-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            let formData = new FormData();
+            formData.append('profile_picture', document.getElementById('profile_picture').files[0]);
+
+            let token = localStorage.getItem('adminToken');
+
+            fetch('/admin/upload_profile_picture', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => alert(data.message))
+            .catch(error => alert('Error: ' + error));
+        });
+    </script>
+</body>
+</html>
