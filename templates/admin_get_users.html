@@ -5,6 +5,15 @@
 {% block content %}
     <h1>Manage Users</h1>
 
+    <!-- Flash messages for success/error -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
     {% if users %}
         <!-- Users Table -->
         <table class="table table-striped">
@@ -33,12 +42,18 @@
                             {% endif %}
                         </td>
                         <td>
+                            <!-- Disable button -->
+                            {% if not user.disabled %}
                                 <form action="{{ url_for('disable_user', user_id=user.id) }}" method="POST" style="display:inline;">
                                     <button type="submit" class="btn btn-warning btn-sm">Disable</button>
                                 </form>
+                            {% else %}
+                                <!-- Enable button (only show for disabled users) -->
+                                <form action="{{ url_for('enable_user', user_id=user.id) }}" method="POST" style="display:inline;">
+                                    <button type="submit" class="btn btn-success btn-sm">Enable</button>
+                                </form>
+                            {% endif %}
                         </td>
-                        
-                        
                     </tr>
                 {% endfor %}
             </tbody>

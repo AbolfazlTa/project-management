@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, flash, redirect, url_for, session
+from flask import Flask, request, jsonify, render_template, flash, redirect, url_for, session, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, unset_jwt_cookies
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -15,8 +15,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
 app.config['JWT_SECRET_KEY'] = 'your_secret_key'
 app.config['UPLOAD_FOLDER'] = 'profile_pics'
 app.config['SECRET_KEY'] = os.urandom(24)
+UPLOAD_FOLDER = 'docs'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Ensure 'uploads' directory exists
 
 
 db = SQLAlchemy(app)
@@ -32,9 +33,15 @@ class Project(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    status = db.Column(db.String(50), nullable=False, default='Pending')  # Example statuses: 'Pending', 'Ongoing', 'Completed'
+    status = db.Column(db.String(50), nullable=False, default='Pending')  
     start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     end_time = db.Column(db.DateTime, nullable=True)
+
+    # ✅ Define project manager relationship properly
+    project_manager_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    project_manager = db.relationship('User', back_populates='managed_projects')
+
+    phases = db.relationship('Phase', backref='project', lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Project {self.title}>"
@@ -73,17 +80,17 @@ class User(db.Model):
     phone_number = db.Column(db.String(15), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     national_code = db.Column(db.String(10), unique=True, nullable=False)
-    role = db.Column(db.String(20), default='user')  # 'admin' or 'user'
+    role = db.Column(db.String(20), default='user')
     profile_picture = db.Column(db.String(255), nullable=True)
-    disabled = db.Column(db.Boolean, default=False, nullable=False)  # Ensure correct definition
-    is_admin = db.Column(db.Boolean, default=False)  # Add this line
+    disabled = db.Column(db.Boolean, default=False, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
 
+    # ✅ Correct relationship definition
+    managed_projects = db.relationship('Project', back_populates='project_manager', lazy=True)
 
-    # Method to check if the user is disabled
     def is_disabled(self):
         return self.disabled
 
-    # Hash and set the password
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
@@ -104,11 +111,288 @@ class Document(db.Model):
     def __repr__(self):
         return f"<Document {self.title} by User {self.user_id}>"
 
+
+class Phase(db.Model):
+    __tablename__ = 'phases'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(50), nullable=False, default='pending')
+    start_time = db.Column(db.DateTime, nullable=False)
+    end_time = db.Column(db.DateTime, nullable=True)
+    guess_time = db.Column(db.Integer, nullable=False)  # Guess time in hours/days
+
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id', ondelete="CASCADE"), nullable=False)
+
+    def __repr__(self):
+        return f"<Phase {self.title} for Project {self.project_id}>"
+
+
+class Model(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    uc = db.Column(db.String(255), nullable=False)  # Assuming 'uc' represents something specific
+    status = db.Column(db.String(50), nullable=False, default='pending')
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id', ondelete="CASCADE"), nullable=False)
+    
+    project = db.relationship('Project', backref=db.backref('models', lazy=True, cascade="all, delete-orphan"))
+    
+    def __repr__(self):
+        return f"<Model {self.title} (UC: {self.uc}, Status: {self.status}) for Project {self.project_id}>"
+
+
+
+# Create the database
+with app.app_context():
+    db.create_all()
+    print("Database and tables created successfully!")
+
+
 # --- Routes ---
 
-@app.route('/documents', methods=['GET', 'POST'])
+@app.route('/projects', methods=['GET', 'POST'])
+@jwt_required()
+def manage_projects():
+    if request.method == 'POST':
+        # Creating a new project
+        data = request.form
+
+        # Validate required fields
+        
+        # Create new project
+        new_project = Project(
+            title=data['title'],
+            description=data.get('description', ''),  # Optional
+            status=data.get('status', 'Pending'),  # Default is 'Pending'
+            start_time=datetime.utcnow()
+        )
+
+        db.session.add(new_project)
+        db.session.commit()
+        session['message'] = "Project created successfully!"
+        return redirect(url_for('manage_projects'))
+
+    elif request.method == 'GET':
+        # Retrieving all projects
+        search_query = session.get('search_query', '')
+        if search_query:
+            projects = Project.query.filter(Project.title.ilike(f'%{search_query}%')).all()
+        else:
+            projects = Project.query.all()
+        
+        return render_template('projects.html', projects=projects, search_query=search_query, message=session.pop('message', None))
+
+
+
+
+@app.route('/projects/search', methods=['POST'])
+def search_projects():
+    session['search_query'] = request.form.get('search', '')
+    return redirect(url_for('manage_projects'))
+
+
+
+
+
+
+
+
+
+
+@app.route('/projects/<int:project_id>', methods=['GET', 'PUT', 'DELETE'])
+@jwt_required()
+def handle_project(project_id):
+    project = Project.query.get_or_404(project_id)
+
+    if request.method == 'GET':
+        # Retrieve a single project
+        return jsonify({
+            "id": project.id,
+            "title": project.title,
+            "description": project.description,
+            "status": project.status,
+            "start_time": project.start_time.strftime('%Y-%m-%d %H:%M:%S'),
+            "end_time": project.end_time.strftime('%Y-%m-%d %H:%M:%S') if project.end_time else None
+        })
+
+    elif request.method == 'PUT':
+        # Update project details
+        data = request.json
+        if 'title' in data:
+            project.title = data['title']
+        if 'description' in data:
+            project.description = data['description']
+        if 'status' in data:
+            project.status = data['status']
+        if 'end_time' in data:
+            try:
+                project.end_time = datetime.strptime(data['end_time'], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                return jsonify({"error": "Invalid end_time format, use YYYY-MM-DD HH:MM:SS"}), 400
+
+        db.session.commit()
+        return jsonify({"message": "Project updated successfully"})
+
+    elif request.method == 'DELETE':
+        # Delete a project
+        db.session.delete(project)
+        db.session.commit()
+        return jsonify({"message": "Project deleted successfully"})
+
+
+
+
+
+
+@app.route('/admin/phases', methods=['GET'])
+@jwt_required()
+def admin_search_phases():
+    user_id = get_jwt_identity()
+    if not is_admin(user_id):
+        return jsonify({"error": "Admin access required"}), 403
+    
+    title_query = request.args.get('title', '')
+    phases = Phase.query.filter(Phase.title.ilike(f'%{title_query}%')).all() if title_query else Phase.query.all()
+    return jsonify([{ 'id': p.id, 'title': p.title, 'status': p.status, 'start_time': p.start_time.isoformat(), 'end_time': p.end_time.isoformat() if p.end_time else None, 'guess_time': p.guess_time, 'project_id': p.project_id } for p in phases])
+
+
+
+
+@app.route('/admin/phase', methods=['GET', 'POST'])
+def admin_manage_phases():
+    if request.method == 'POST':
+        method_override = request.form.get('_method', '').upper()
+
+        # DELETE Phase
+        if method_override == 'DELETE':
+            phase_id = request.form.get('id')
+            phase = Phase.query.get(phase_id)
+            if phase:
+                db.session.delete(phase)
+                db.session.commit()
+                flash("Phase deleted successfully!", "success")
+            else:
+                flash("Phase not found", "danger")
+            return redirect(url_for('admin_manage_phases'))
+
+        # EDIT/UPDATE Phase
+        elif method_override == 'PUT':
+            phase_id = request.form.get('id')
+            phase = Phase.query.get(phase_id)
+            if not phase:
+                flash("Phase not found", "danger")
+                return redirect(url_for('admin_manage_phases'))
+
+            # Update values
+            phase.title = request.form.get('title')
+            phase.status = request.form.get('status')
+            try:
+                phase.start_time = datetime.strptime(request.form.get('start_time'), '%Y-%m-%dT%H:%M')
+            except ValueError:
+                flash("Invalid start time format", "danger")
+                return redirect(url_for('admin_manage_phases'))
+            phase.guess_time = int(request.form.get('guess_time'))
+
+            db.session.commit()
+            flash("Phase updated successfully!", "success")
+            return redirect(url_for('admin_manage_phases'))
+
+        else:
+            title = request.form.get('title')
+            status = request.form.get('status')
+            guess_time = request.form.get('guess_time')
+            start_time = request.form.get('start_time')
+            project_id = request.form.get('project_id')
+
+            if not all([title, status, start_time, guess_time, project_id]):
+                flash("All fields are required to create a phase.", "danger")
+                return redirect(url_for('admin_manage_phases'))
+
+            try:
+                new_phase = Phase(
+                    title=title,
+                    status=status,
+                    guess_time=int(guess_time),
+                    start_time=datetime.strptime(start_time, '%Y-%m-%dT%H:%M'),
+                    project_id=int(project_id)
+                )
+                db.session.add(new_phase)
+                db.session.commit()
+                flash("Phase created successfully!", "success")
+            except Exception as e:
+                flash(f"Error creating phase: {e}", "danger")
+
+            return redirect(url_for('admin_manage_phases'))
+    # GET Request
+    phases = Phase.query.all()
+    projects = Project.query.all()
+    return render_template('admin_phase.html', phases=phases, projects=projects)
+
+
+
+
+
+
+@app.route('/admin/phase/<int:phase_id>', methods=['GET', 'PUT', 'DELETE'])
+@jwt_required()
+def handle_phase(phase_id):
+    user_id = get_jwt_identity()  # Get the ID of the authenticated user
+    user = User.query.get(user_id)  # Fetch user details
+
+    if not user or user.role != 'admin':  # Check if user is admin
+        return jsonify({"error": "Unauthorized access"}), 403
+
+    phase = Phase.query.get_or_404(phase_id)
+
+    if request.method == 'GET':
+        return jsonify({
+            "id": phase.id,
+            "title": phase.title,
+            "status": phase.status,
+            "start_time": phase.start_time.strftime('%Y-%m-%d %H:%M:%S'),
+            "end_time": phase.end_time.strftime('%Y-%m-%d %H:%M:%S') if phase.end_time else None,
+            "guess_time": phase.guess_time,
+            "project_id": phase.project_id
+        })
+
+    elif request.method == 'PUT':
+        data = request.json
+        if 'title' in data:
+            phase.title = data['title']
+        if 'status' in data:
+            phase.status = data['status']
+        if 'start_time' in data:
+            try:
+                phase.start_time = datetime.strptime(data['start_time'], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                return jsonify({"error": "Invalid start_time format, use YYYY-MM-DD HH:MM:SS"}), 400
+        if 'end_time' in data:
+            try:
+                phase.end_time = datetime.strptime(data['end_time'], '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                return jsonify({"error": "Invalid end_time format, use YYYY-MM-DD HH:MM:SS"}), 400
+        if 'guess_time' in data:
+            phase.guess_time = data['guess_time']
+
+        db.session.commit()
+        return jsonify({"message": "Phase updated successfully"})
+
+    elif request.method == 'DELETE':
+        db.session.delete(phase)
+        db.session.commit()
+        return jsonify({"message": "Phase deleted successfully"})
+
+
+
+
+
+
+@app.route('/admin/documents', methods=['GET', 'POST'])
 @jwt_required()
 def manage_documents():
+    claims = get_jwt()  # Get JWT claims
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Unauthorized access"}), 403  # Restrict non-admin users
+
     if request.method == 'POST':
         if 'file' not in request.files:
             return jsonify({"error": "No file part"}), 400
@@ -120,7 +404,7 @@ def manage_documents():
         if file.filename == '':
             return jsonify({"error": "No selected file"}), 400
         
-        file_path = os.path.join('uploads', file.filename)
+        file_path = os.path.join('docs', file.filename)
         file.save(file_path)
         
         new_document = Document(
@@ -133,18 +417,33 @@ def manage_documents():
         return jsonify({"message": "Document uploaded successfully!", "document": new_document.id}), 201
     
     documents = Document.query.all()
-    return jsonify([{ "id": d.id, "title": d.title, "file_path": d.file_path, "upload_time": d.upload_time, "user_id": d.user_id } for d in documents])
+    return jsonify([
+        { "id": d.id, "title": d.title, "file_path": d.file_path, "upload_time": d.upload_time, "user_id": d.user_id } 
+        for d in documents
+    ])
 
 
 
 
-@app.route('/documents/<int:document_id>', methods=['GET', 'PUT', 'DELETE'])
+
+
+@app.route('/admin/documents/<int:document_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def manage_single_document(document_id):
+    claims = get_jwt()  # Get JWT claims
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Unauthorized access"}), 403  # Restrict non-admin users
+
     document = Document.query.get_or_404(document_id)
     
     if request.method == 'GET':
-        return jsonify({"id": document.id, "title": document.title, "file_path": document.file_path, "upload_time": document.upload_time, "user_id": document.user_id})
+        return jsonify({
+            "id": document.id,
+            "title": document.title,
+            "file_path": document.file_path,
+            "upload_time": document.upload_time,
+            "user_id": document.user_id
+        })
     
     if request.method == 'PUT':
         data = request.json
@@ -158,11 +457,15 @@ def manage_single_document(document_id):
 
 
 
-@app.route('/documents/download/<int:document_id>', methods=['GET'])
+@app.route('/admin/documents/download/<int:document_id>', methods=['GET'])
 @jwt_required()
 def download_document(document_id):
+    claims = get_jwt()  # Get JWT claims
+    if claims.get("role") != "admin":
+        return jsonify({"error": "Unauthorized access"}), 403  # Restrict non-admin users
+
     document = Document.query.get_or_404(document_id)
-    return send_from_directory('uploads', os.path.basename(document.file_path), as_attachment=True)
+    return send_from_directory('docs', os.path.basename(document.file_path), as_attachment=True)
 
 
 
@@ -195,91 +498,118 @@ def forgot_password():
 
 
 
-@app.route('/admin/projects', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def manage_projects():
-    # Check if the user is logged in via the session
+@app.route('/admin/project', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def manage_project():
+    # Ensure user is logged in
     if 'user_id' not in session:
         flash("You must be logged in to access this page.", "danger")
-        return redirect(url_for('login'))  # Redirect to login if not authenticated
-    
-    # Retrieve the current user from the session
+        return redirect(url_for('login'))  # Adjust for your login route
+
     current_user_id = session['user_id']
     admin_user = User.query.get(current_user_id)
 
-    # Ensure the user is an admin
-    if not admin_user or not admin_user.is_admin:
+    if not admin_user:
         flash("Access denied. Admins only.", "danger")
-        return redirect(url_for('home'))  # Redirect to home or an appropriate page
-    
+        return redirect(url_for('get_profile'))  # Adjust for your profile route
+
+    # Get form data
+    data = request.form
+
+    # Handle method override (_method hidden field)
+    if data.get("_method") == "DELETE":
+        request.method = "DELETE"
+    elif data.get("_method") == "PUT":
+        request.method = "PUT"
+
+    # **GET REQUEST - Load projects and users**
     if request.method == 'GET':
-        # Fetch all projects and pass them to the template
-        projects = Project.query.all()
-        return render_template('projects.html', projects=projects)
+        users = User.query.all()  # Get all users for project manager selection
+        projects = Project.query.all()  # Get all projects
+        return render_template('projects.html', projects=projects, users=users)
 
+    # **POST REQUEST - Create a new project**
     elif request.method == 'POST':
-        # Create a new project
-        data = request.form
-        project_manager = User.query.get(data.get('project_manager_id'))
+        title = data.get('title')
+        description = data.get('description')
+        status = data.get('status', 'Pending')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time', None)
+        project_manager_id = data.get('project_manager_id')
 
-        if not project_manager or not project_manager.is_project_manager:
-            flash("Invalid or unauthorized project manager.", "danger")
-            return redirect(url_for('manage_projects'))
+        # Ensure all required fields are filled
+        if not title or not start_time or not project_manager_id:
+            flash("Title, Start Time, and Project Manager are required.", "danger")
+            return redirect(url_for('manage_project'))
 
+        project_manager = User.query.get(project_manager_id)
+        if not project_manager:
+            flash("Project manager not found.", "danger")
+            return redirect(url_for('manage_project'))
+
+        # Create the project
         new_project = Project(
-            title=data['title'],
-            description=data['description'],
-            status=data.get('status', 'pending'),  # Default status if not provided
-            start_time=datetime.strptime(data['start_time'], '%Y-%m-%d %H:%M:%S'),
-            end_time=datetime.strptime(data['end_time'], '%Y-%m-%d %H:%M:%S') if data.get('end_time') else None,
-            project_manager=project_manager
+            title=title,
+            description=description,
+            status=status,
+            start_time=datetime.strptime(start_time, '%Y-%m-%dT%H:%M'),
+            end_time=datetime.strptime(end_time, '%Y-%m-%dT%H:%M') if end_time else None,
+            project_manager_id=project_manager.id
         )
+
         db.session.add(new_project)
         db.session.commit()
         flash("Project created successfully!", "success")
-        return redirect(url_for('manage_projects'))
+        return redirect(url_for('manage_project'))
 
+    # **PUT REQUEST - Edit an existing project**
     elif request.method == 'PUT':
-        # Update an existing project
-        data = request.form
-        project = Project.query.get(data['id'])
+        project_id = data.get('id')
+        project = Project.query.get(project_id)
 
         if not project:
             flash("Project not found", "danger")
-            return redirect(url_for('manage_projects'))
+            return redirect(url_for('manage_project'))
 
-        # Validate and update project manager
-        if 'project_manager_id' in data:
-            project_manager = User.query.get(data['project_manager_id'])
-            if not project_manager or not project_manager.is_project_manager:
-                flash("Invalid or unauthorized project manager.", "danger")
-                return redirect(url_for('manage_projects'))
-            project.project_manager = project_manager
-
+        # Update project details
         project.title = data.get('title', project.title)
         project.description = data.get('description', project.description)
         project.status = data.get('status', project.status)
-        project.start_time = datetime.strptime(data['start_time'], '%Y-%m-%d %H:%M:%S') if data.get('start_time') else project.start_time
-        project.end_time = datetime.strptime(data['end_time'], '%Y-%m-%d %H:%M:%S') if data.get('end_time') else project.end_time
+        project.start_time = datetime.strptime(data['start_time'], '%Y-%m-%dT%H:%M') if data.get('start_time') else project.start_time
+        project.end_time = datetime.strptime(data['end_time'], '%Y-%m-%dT%H:%M') if data.get('end_time') else project.end_time
+
+        # Update project manager if provided
+        project_manager_id = data.get('project_manager_id')
+        if project_manager_id:
+            project_manager = User.query.get(project_manager_id)
+            if not project_manager:
+                flash("Invalid project manager.", "danger")
+                return redirect(url_for('manage_project'))
+            project.project_manager_id = project_manager.id
 
         db.session.commit()
         flash("Project updated successfully!", "success")
-        return redirect(url_for('manage_projects'))
+        return redirect(url_for('manage_project'))
 
+    # **DELETE REQUEST - Remove a project**
     elif request.method == 'DELETE':
-        # Delete a project
-        data = request.form
-        project = Project.query.get(data['id'])
+        project_id = data.get('id')
+        project = Project.query.get(project_id)
 
         if not project:
             flash("Project not found", "danger")
-            return redirect(url_for('manage_projects'))
+            return redirect(url_for('manage_project'))
 
         db.session.delete(project)
         db.session.commit()
         flash("Project deleted successfully!", "success")
-        return redirect(url_for('manage_projects'))
+        return redirect(url_for('manage_project'))
 
     return jsonify({"message": "Method not allowed"}), 405
+
+
+
+
+
 
 
 
@@ -566,17 +896,31 @@ def geet_profile():
 @app.route('/admin/edit_user/<int:user_id>', methods=['GET', 'POST'])
 def edit_user(user_id):
     user = User.query.get_or_404(user_id)
-    
+
     if request.method == 'POST':
+        # Update profile fields
         user.username = request.form['username']
         user.email = request.form['email']
         user.phone_number = request.form['phone_number']
         user.national_code = request.form['national_code']
+
+        # Verify current password
+        current_password = request.form['current_password']
+        if not check_password_hash(user.password, current_password):
+            flash("Current password is incorrect.", "danger")
+            return redirect(request.url)
+
+        # Optional new password
+        new_password = request.form['new_password']
+        if new_password:
+            user.password = generate_password_hash(new_password)
+
         db.session.commit()
         flash("User updated successfully.", "success")
-        return redirect(url_for('get_users'))
+        return redirect(url_for('get_users'))  # or redirect to profile
 
     return render_template('edit_user.html', user=user)
+
 
 
 @app.route('/admin/edit_profile', methods=['GET', 'POST'])
@@ -702,19 +1046,36 @@ def get_all_users():
     return jsonify(users_list)
 
 
+@app.route('/admin/enable_user/<int:user_id>', methods=['POST'])
+def enable_user(user_id):
+    user = User.query.get(user_id)
+    
+    if user:
+        user.disabled = False
+        db.session.commit()
+        flash("User has been enabled.", "success")
+    else:
+        flash("User not found.", "error")
+    
+    return redirect(url_for('get_users'))  # Redirect to your user management page
+
+
+
+
+
+
 @app.route('/admin/disable_user/<int:user_id>', methods=['POST'])
 def disable_user(user_id):
-    # Fetch the user by ID
-    user = User.query.get_or_404(user_id)
+    user = User.query.get(user_id)
+    
+    if user:
+        user.disabled = True  # Set the user as disabled
+        db.session.commit()
+        flash(f"User {user.username} has been disabled.", "success")
+    else:
+        flash("User not found", "error")
 
-    # Disable the user
-    user.disabled = True
-    db.session.commit()
-
-    # Flash a message to inform the admin
-    flash(f"User {user.username} has been disabled.", "success")
     return redirect(url_for('get_users'))
-
 
 
 @app.route('/admin/assign_role', methods=['POST'])
@@ -795,6 +1156,4 @@ def on_leave(data):
     emit('status', {"message": "User left chat"}, room=str(chat_id))
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    socketio.run(app, debug=True)
+    app.run(debug=True)

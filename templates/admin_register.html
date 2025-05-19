@@ -4,65 +4,74 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Registration</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="container mt-5">
-        <h1>Admin Registration</h1>
+<body class="flex items-center justify-center min-h-screen bg-gray-100">
+    <div class="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
+        <h2 class="text-2xl font-semibold text-center text-gray-700">Admin Registration</h2>
+        
+        
 
-        <!-- Display flash messages -->
+        <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="alert alert-warning">
+                <div class="mt-4">
                     {% for category, message in messages %}
-                        <strong>{{ message }}</strong><br>
+                        {% if category == 'success' %}
+                            <div class="p-3 mb-2 text-sm text-white bg-green-500 rounded">{{ message }}</div>
+                        {% elif category == 'error' or category == 'danger' %}
+                            <div class="p-3 mb-2 text-sm text-white bg-red-500 rounded">{{ message }}</div>
+                        {% elif category == 'warning' %}
+                            <div class="p-3 mb-2 text-sm text-white bg-yellow-500 rounded">{{ message }}</div>
+                        {% else %}
+                            <div class="p-3 mb-2 text-sm text-white bg-blue-500 rounded">{{ message }}</div>
+                        {% endif %}
                     {% endfor %}
                 </div>
             {% endif %}
         {% endwith %}
 
+
+
+
+
+
         <!-- Registration Form -->
-        <form method="POST" action="{{ url_for('admin_register') }}">
-            <!-- Username -->
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" class="form-control" id="username" name="username" placeholder="Username" required>
+        <form method="POST" action="{{ url_for('admin_register') }}" class="mt-6">
+            <div>
+                <label for="username" class="block text-sm font-medium text-gray-600">Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter your username" required 
+                       class="w-full px-4 py-2 mt-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
-
-            <!-- Password -->
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" class="form-control" id="password" name="password" placeholder="Password" required>
+            <div class="mt-4">
+                <label for="password" class="block text-sm font-medium text-gray-600">Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter your password" required 
+                       class="w-full px-4 py-2 mt-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
-
-            <!-- Confirm Password -->
-            <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
-                <input type="password" class="form-control" id="confirm_password" name="confirm_password" placeholder="Confirm Password" required>
+            <div class="mt-4">
+                <label for="confirm_password" class="block text-sm font-medium text-gray-600">Confirm Password</label>
+                <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm password" required 
+                       class="w-full px-4 py-2 mt-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
-
-            <!-- Phone Number -->
-            <div class="form-group">
-                <label for="phone_number">Phone Number</label>
-                <input type="text" class="form-control" id="phone_number" name="phone_number" placeholder="Phone Number" required>
+            <div class="mt-4">
+                <label for="phone_number" class="block text-sm font-medium text-gray-600">Phone Number</label>
+                <input type="text" id="phone_number" name="phone_number" placeholder="Enter your phone number" required 
+                       class="w-full px-4 py-2 mt-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
-
-            <!-- Email -->
-            <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" class="form-control" id="email" name="email" placeholder="Email" required>
+            <div class="mt-4">
+                <label for="email" class="block text-sm font-medium text-gray-600">Email</label>
+                <input type="email" id="email" name="email" placeholder="Enter your email" required 
+                       class="w-full px-4 py-2 mt-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
-
-            <!-- National Code -->
-            <div class="form-group">
-                <label for="national_code">National Code</label>
-                <input type="text" class="form-control" id="national_code" name="national_code" placeholder="National Code" required>
+            <div class="mt-4">
+                <label for="national_code" class="block text-sm font-medium text-gray-600">National Code</label>
+                <input type="text" id="national_code" name="national_code" placeholder="Enter your national code" required 
+                       class="w-full px-4 py-2 mt-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
-
-            <!-- Submit Button -->
-            <button type="submit" class="btn btn-primary">Register Admin</button>
+            <button type="submit" class="w-full px-4 py-2 mt-6 text-white bg-blue-500 rounded-lg hover:bg-blue-600">
+                Register Admin
+            </button>
         </form>
     </div>
-
 </body>
 </html>

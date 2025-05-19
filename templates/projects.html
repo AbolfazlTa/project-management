@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects</title>
+</head>
+<body>
+    {% extends 'layout.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Manage Projects</h2>
+
+    <!-- Flash messages for success/error -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Form to create a new project -->
+    <h3>Create New Project</h3>
+    <form action="{{ url_for('manage_project') }}" method="POST">
+        <div class="form-group">
+            <label for="title">Title</label>
+            <input type="text" class="form-control" id="title" name="title" required>
+        </div>
+
+        <div class="form-group">
+            <label for="description">Description</label>
+            <textarea class="form-control" id="description" name="description"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select class="form-control" id="status" name="status">
+                <option value="Pending">Pending</option>
+                <option value="Ongoing">Ongoing</option>
+                <option value="Completed">Completed</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="start_time">Start Time</label>
+            <input type="datetime-local" class="form-control" id="start_time" name="start_time" required>
+        </div>
+
+        <div class="form-group">
+            <label for="end_time">End Time</label>
+            <input type="datetime-local" class="form-control" id="end_time" name="end_time">
+        </div>
+
+        <div class="form-group">
+            <label for="project_manager_id">Project Manager</label>
+            <select class="form-control" id="project_manager_id" name="project_manager_id" required>
+                {% for user in users %}
+                    <option value="{{ user.id }}">{{ user.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Create Project</button>
+    </form>
+
+    <hr>
+
+    <!-- Projects Table -->
+    <table class="table table-bordered mt-4">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th>Start Time</th>
+                <th>End Time</th>
+                <th>Project Manager</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for project in projects %}
+            <tr>
+                <td>{{ project.id }}</td>
+                <td>{{ project.title }}</td>
+                <td>{{ project.description }}</td>
+                <td>{{ project.status }}</td>
+                <td>{{ project.start_time }}</td>
+                <td>{{ project.end_time }}</td>
+                <td>{{ project.project_manager.username if project.project_manager else 'N/A' }}</td>
+
+                <td>
+                    <!-- Edit Button (triggers modal) -->
+                    <button type="button" class="btn btn-warning btn-sm" data-toggle="modal" data-target="#editProjectModal{{ project.id }}">Edit</button>
+
+                    <!-- Delete Form -->
+                    <form action="{{ url_for('manage_project') }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this project?');" style="display:inline;">
+                        <input type="hidden" name="id" value="{{ project.id }}">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            </tr>
+
+            <!-- Edit Modal -->
+            <div class="modal fade" id="editProjectModal{{ project.id }}" tabindex="-1" role="dialog" aria-labelledby="editProjectModalLabel{{ project.id }}" aria-hidden="true">
+                <div class="modal-dialog" role="document">
+                    <form method="POST" action="{{ url_for('manage_project') }}">
+                        <input type="hidden" name="_method" value="PUT">
+                        <input type="hidden" name="id" value="{{ project.id }}">
+                        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Edit Project - {{ project.title }}</h5>
+                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label>Title</label>
+                                    <input type="text" class="form-control" name="title" value="{{ project.title }}" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Description</label>
+                                    <textarea class="form-control" name="description">{{ project.description }}</textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Status</label>
+                                    <select class="form-control" name="status">
+                                        <option value="Pending" {% if project.status == 'Pending' %}selected{% endif %}>Pending</option>
+                                        <option value="Ongoing" {% if project.status == 'Ongoing' %}selected{% endif %}>Ongoing</option>
+                                        <option value="Completed" {% if project.status == 'Completed' %}selected{% endif %}>Completed</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Start Time</label>
+                                    <input type="datetime-local" class="form-control" name="start_time" value="{{ project.start_time.strftime('%Y-%m-%dT%H:%M') }}">
+                                </div>
+                                <div class="form-group">
+                                    <label>End Time</label>
+                                    <input type="datetime-local" class="form-control" name="end_time" value="{{ project.end_time.strftime('%Y-%m-%dT%H:%M') if project.end_time }}">
+                                </div>
+                                <div class="form-group">
+                                    <label>Project Manager</label>
+                                    <select class="form-control" name="project_manager_id">
+                                        {% for user in users %}
+                                            <option value="{{ user.id }}" {% if user.id == project.project_manager_id %}selected{% endif %}>{{ user.username }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Changes</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <a href="{{ url_for('get_profile') }}" class="btn btn-secondary">Back to Dashboard</a>
+</div>
+{% endblock %}
+</body>
+</html>
